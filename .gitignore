@@ -1,0 +1,9 @@
+# build output
+engine/build/
+engine/build-wii*/
+game/build/
+*.o
+*.d
+*.dol
+*.elf
+*.map

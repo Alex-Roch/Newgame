@@ -1,0 +1,203 @@
+# Makefile.wii: Spearmint + native GX renderer + Wii platform layer -> boot.dol
+#
+#   make -f Makefile.wii            release DOL:  build-wii/boot.dol
+#   make -f Makefile.wii debug      debug DOL with boot.txt/diag.txt logging
+#   make -f Makefile.wii check      compile-only check with a host PowerPC cross
+#                                   compiler (no devkitPPC needed, no link)
+#   make -f Makefile.wii clean
+#
+# Needs devkitPro (devkitPPC + libogc + libfat), i.e. DEVKITPRO and
+# DEVKITPPC exported by the devkitPro shell. Nothing else: zlib, jpeg and
+# FreeType are compiled from the engine tree.
+#
+# Options:
+#   WII_VM_NATIVE=0    bytecode interpreter instead of the PowerPC JIT
+#   WII_MAXFPS=60      in-game frame cap (default 30)
+#   WII_GX_PROFILE=1   GP counter windows in diag.txt (debug builds)
+#   WII_GAMEDIR=name   data directory on the card, default "newgame"
+#   WII_BASEGAME=dir   com_basegame, default "baseq3"
+
+WII_VM_NATIVE  ?= 1
+WII_MAXFPS     ?= 30
+WII_GX_PROFILE ?= 0
+WII_GAMEDIR    ?= newgame
+WII_BASEGAME   ?= baseq3
+
+CHECK ?= 0
+ifeq ($(MAKECMDGOALS),check)
+  CHECK := 1
+endif
+
+ifeq ($(CHECK),1)
+  # Host cross compiler + libogc headers only. Set LIBOGC_SRC/LIBFAT_SRC to
+  # checkouts of devkitPro/libogc and devkitPro/libfat.
+  LIBOGC_SRC ?= ../../libogc
+  LIBFAT_SRC ?= ../../libfat
+  CC       := powerpc-linux-gnu-gcc
+  MACHDEP  := -mcpu=750 -mno-altivec
+  LIBOGC_INC := $(LIBOGC_SRC)/gc
+  EXTRA_INC := -I$(LIBFAT_SRC)/include
+  BUILD    := build-wii-check
+else
+  ifeq ($(strip $(DEVKITPRO)),)
+    $(error DEVKITPRO is not set; run from the devkitPro shell)
+  endif
+  ifeq ($(strip $(DEVKITPPC)),)
+    $(error DEVKITPPC is not set; run from the devkitPro shell)
+  endif
+  include $(DEVKITPPC)/wii_rules
+  EXTRA_INC :=
+  BUILD    := build-wii
+endif
+
+ifeq ($(MAKECMDGOALS),debug)
+  BUILD      := $(BUILD)-debug
+  DEBUG_FLAG := -DWII_DEBUG
+else
+  DEBUG_FLAG := -DNDEBUG
+endif
+
+TARGET := boot
+
+CFLAGS = $(MACHDEP) -pipe -O2 -fno-strict-aliasing \
+	-Wall -Wno-unused-variable -Wno-missing-braces -Wno-cpp -Wno-unused-function \
+	-Wno-unused-but-set-variable -Wno-format-truncation -Wno-stringop-truncation \
+	-MMD -MP \
+	-msdata=none -G 0 \
+	-DGEKKO -DWII -DHW_RVL \
+	-DARCH_STRING=\"ppc\" \
+	-DBOTLIB \
+	-DUSE_INTERNAL_ZLIB -DUSE_INTERNAL_JPEG -DUSE_INTERNAL_FREETYPE -DUSE_FREETYPE \
+	-DWII_NATIVE_GX=1 \
+	-DWII_VM_NATIVE=$(WII_VM_NATIVE) \
+	-DWII_GX_PROFILE=$(WII_GX_PROFILE) \
+	-DWII_MAXFPS_STR=\"$(WII_MAXFPS)\" \
+	-DWII_GAMEDIR=\"$(WII_GAMEDIR)\" -DWII_BASEGAME=\"$(WII_BASEGAME)\" \
+	$(DEBUG_FLAG) \
+	-include code/wii/wii_platform.h \
+	-Icode/wii/include \
+	-Icode -Icode/qcommon -Icode/client -Icode/renderercommon -Icode/renderergl1 \
+	-Icode/zlib -Icode/jpeg-8c -Icode/freetype-2.9/include \
+	-I$(LIBOGC_INC) $(EXTRA_INC)
+
+FT_CFLAGS = -DFT2_BUILD_LIBRARY -Wno-implicit-fallthrough
+
+LDFLAGS = $(MACHDEP) -Wl,-Map,$(BUILD)/$(TARGET).elf.map \
+	-Wl,--wrap,calloc -Wl,--wrap,free -Wl,--wrap,__malloc_lock -Wl,--wrap,__malloc_unlock \
+	-G 0
+LIBS = -L$(LIBOGC_LIB) -Wl,--start-group -lasnd -lfat -logc -lm -Wl,--end-group
+
+#---------------------------------------------------------------------------
+# Sources
+#---------------------------------------------------------------------------
+CLIENT_SRCS := \
+	code/client/cl_cgame.c code/client/cl_cin.c code/client/cl_console.c \
+	code/client/cl_input.c code/client/cl_joystick.c code/client/cl_keys.c \
+	code/client/cl_main.c code/client/cl_net_chan.c code/client/cl_parse.c \
+	code/client/cl_scrn.c code/client/cl_avi.c \
+	code/client/snd_altivec.c code/client/snd_adpcm.c code/client/snd_dma.c \
+	code/client/snd_mem.c code/client/snd_mix.c code/client/snd_wavelet.c \
+	code/client/snd_main.c code/client/snd_codec.c code/client/snd_codec_wav.c
+
+QCOMMON_SRCS := \
+	code/qcommon/bsp.c code/qcommon/bsp_q3.c \
+	code/qcommon/cm_load.c code/qcommon/cm_patch.c code/qcommon/cm_polylib.c \
+	code/qcommon/cm_test.c code/qcommon/cm_trace.c code/qcommon/cmd.c \
+	code/qcommon/common.c code/qcommon/cvar.c code/qcommon/files.c \
+	code/qcommon/md4.c code/qcommon/md5.c code/qcommon/msg.c \
+	code/qcommon/net_chan.c code/qcommon/huffman.c \
+	code/qcommon/q_math.c code/qcommon/q_shared.c \
+	code/qcommon/unzip.c code/qcommon/ioapi.c code/qcommon/puff.c \
+	code/qcommon/vm.c code/qcommon/vm_interpreted.c
+
+ifeq ($(WII_VM_NATIVE),1)
+  QCOMMON_SRCS += code/qcommon/vm_powerpc.c code/qcommon/vm_powerpc_asm.c
+endif
+
+SERVER_SRCS := \
+	code/server/sv_bot.c code/server/sv_ccmds.c code/server/sv_client.c \
+	code/server/sv_game.c code/server/sv_init.c code/server/sv_main.c \
+	code/server/sv_net_chan.c code/server/sv_snapshot.c code/server/sv_world.c
+
+BOTLIB_SRCS := \
+	code/botlib/l_memory.c code/botlib/l_precomp.c code/botlib/l_script.c code/botlib/l_struct.c
+
+RENDERER_SRCS := \
+	code/renderergl1/tr_altivec.c code/renderergl1/tr_animation.c \
+	code/renderergl1/tr_animation_mds.c code/renderergl1/tr_animation_mdm.c \
+	code/renderergl1/tr_backend.c code/renderergl1/tr_bsp.c code/renderergl1/tr_cmds.c \
+	code/renderergl1/tr_cmesh.c code/renderergl1/tr_curve.c code/renderergl1/tr_flares.c \
+	code/renderercommon/tr_font.c code/renderergl1/tr_image.c \
+	code/renderercommon/tr_image_bmp.c code/renderercommon/tr_image_dds.c \
+	code/renderercommon/tr_image_ftx.c code/renderercommon/tr_image_jpg.c \
+	code/renderercommon/tr_image_pcx.c code/renderercommon/tr_image_png.c \
+	code/renderercommon/tr_image_tga.c code/renderergl1/tr_init.c \
+	code/renderergl1/tr_light.c code/renderergl1/tr_main.c code/renderergl1/tr_marks.c \
+	code/renderergl1/tr_mesh.c code/renderergl1/tr_model.c code/renderergl1/tr_model_iqm.c \
+	code/renderergl1/tr_model_tan.c code/renderercommon/tr_noise.c \
+	code/renderergl1/tr_scene.c code/renderergl1/tr_shade.c code/renderergl1/tr_shade_calc.c \
+	code/renderergl1/tr_shader.c code/renderergl1/tr_shadows.c code/renderergl1/tr_sky.c \
+	code/renderergl1/tr_surface.c code/renderergl1/tr_world.c
+
+GX_SRCS := code/renderergx/tr_gx.c code/renderergx/tr_gx_texture.c code/renderergx/qgl_gx.c
+
+WII_SRCS := code/wii/wii_main.c code/wii/wii_sys.c code/wii/wii_net.c \
+	code/wii/wii_video.c code/wii/wii_input.c code/wii/wii_snd.c code/sys/con_passive.c code/sys/con_log.c
+
+ZLIB_SRCS := $(wildcard code/zlib/*.c)
+JPEG_SRCS := $(filter-out code/jpeg-8c/jmemansi.c code/jpeg-8c/jmemdos.c code/jpeg-8c/jmemmac.c code/jpeg-8c/jmemname.c code/jpeg-8c/example.c code/jpeg-8c/cjpeg.c code/jpeg-8c/djpeg.c code/jpeg-8c/jpegtran.c code/jpeg-8c/rdjpgcom.c code/jpeg-8c/wrjpgcom.c code/jpeg-8c/ckconfig.c code/jpeg-8c/rdbmp.c code/jpeg-8c/rdgif.c code/jpeg-8c/rdppm.c code/jpeg-8c/rdrle.c code/jpeg-8c/rdtarga.c code/jpeg-8c/wrbmp.c code/jpeg-8c/wrgif.c code/jpeg-8c/wrppm.c code/jpeg-8c/wrrle.c code/jpeg-8c/wrtarga.c code/jpeg-8c/rdswitch.c code/jpeg-8c/cdjpeg.c code/jpeg-8c/transupp.c code/jpeg-8c/rdcolmap.c code/jpeg-8c/jmemnobs.c,$(wildcard code/jpeg-8c/*.c)) code/jpeg-8c/jmemnobs.c
+
+FTDIR := code/freetype-2.9
+FT_SRCS := \
+	$(FTDIR)/src/base/ftbase.c $(FTDIR)/src/base/ftbitmap.c $(FTDIR)/src/base/ftfntfmt.c \
+	$(FTDIR)/src/base/ftglyph.c $(FTDIR)/src/base/ftinit.c $(FTDIR)/src/base/ftlcdfil.c \
+	$(FTDIR)/src/base/ftstroke.c $(FTDIR)/src/base/ftsystem.c \
+	$(FTDIR)/src/bzip2/ftbzip2.c $(FTDIR)/src/gzip/ftgzip.c $(FTDIR)/src/lzw/ftlzw.c \
+	$(FTDIR)/src/autofit/autofit.c $(FTDIR)/src/bdf/bdf.c $(FTDIR)/src/cff/cff.c \
+	$(FTDIR)/src/pcf/pcf.c $(FTDIR)/src/pfr/pfr.c $(FTDIR)/src/psaux/psaux.c \
+	$(FTDIR)/src/pshinter/pshinter.c $(FTDIR)/src/psnames/psnames.c $(FTDIR)/src/raster/raster.c \
+	$(FTDIR)/src/sfnt/sfnt.c $(FTDIR)/src/smooth/smooth.c $(FTDIR)/src/truetype/truetype.c \
+	$(FTDIR)/src/type1/type1.c $(FTDIR)/src/cid/type1cid.c $(FTDIR)/src/type42/type42.c \
+	$(FTDIR)/src/winfonts/winfnt.c
+
+ALL_SRCS := $(CLIENT_SRCS) $(QCOMMON_SRCS) $(SERVER_SRCS) $(BOTLIB_SRCS) \
+	$(RENDERER_SRCS) $(GX_SRCS) $(WII_SRCS) $(ZLIB_SRCS) $(JPEG_SRCS) $(FT_SRCS)
+
+OBJS := $(patsubst %.c,$(BUILD)/%.o,$(ALL_SRCS))
+DEPS := $(OBJS:.o=.d)
+
+#---------------------------------------------------------------------------
+# Rules
+#---------------------------------------------------------------------------
+.PHONY: all dol debug check clean
+
+all: dol
+
+dol: $(BUILD)/$(TARGET).dol
+debug: $(BUILD)/$(TARGET).dol
+
+check: $(OBJS)
+	@echo "check: all $(words $(OBJS)) objects compiled for PowerPC (no link)"
+
+$(BUILD)/$(TARGET).dol: $(BUILD)/$(TARGET).elf
+	elf2dol $< $@
+	@echo "Built $@. Copy it to <dev>:/apps/newgame/boot.dol and the data to <dev>:/$(WII_GAMEDIR)/"
+
+$(BUILD)/$(TARGET).elf: $(OBJS)
+	@echo "LD $@"
+	$(CC) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
+
+$(BUILD)/$(FTDIR)/%.o: $(FTDIR)/%.c
+	@mkdir -p $(dir $@)
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) $(FT_CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: %.c
+	@mkdir -p $(dir $@)
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+-include $(DEPS)
+
+clean:
+	rm -rf build-wii build-wii-debug build-wii-check build-wii-check-debug
