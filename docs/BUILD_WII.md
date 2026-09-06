@@ -54,6 +54,10 @@ tools/wii/check_qgl.sh          # every GL entry point the frontend calls is wir
 
 ## 4. Card layout
 
+`tools/wii/stage_card.sh <card root> <dir with pak*.pk3> [--game baseoa] [--debug]`
+builds the whole layout below in one step (it clones spearmint-patch-data
+if needed). The manual layout:
+
 ```
 <dev>:/apps/newgame/boot.dol           (<dev> is sd: or usb:; SD is probed first)
 <dev>:/apps/newgame/meta.xml           (optional HBC metadata)
