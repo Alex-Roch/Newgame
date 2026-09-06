@@ -22,7 +22,8 @@
 #   --image-size SIZE      size for a newly created image (default 2G)
 #   --dolphin              stage into Dolphin's SD sync folder
 #                          (Load/WiiSDSync under the Dolphin user directory);
-#                          <card root> is ignored
+#                          <card root> is ignored. Needs no mtools: enable
+#                          Config > Wii > "Automatically Sync with Folder".
 #
 # Result (for --game baseq3):
 #   <card>/apps/newgame/boot.dol, meta.xml
@@ -36,7 +37,7 @@
 # Run from anywhere; paths are resolved relative to the repository.
 set -euo pipefail
 
-usage() { sed -n '2,27p' "$0"; exit 1; }
+usage() { sed -n '2,28p' "$0"; exit 1; }
 
 [ $# -ge 2 ] || usage
 CARD=$1; PAKDIR=$2; shift 2
@@ -73,9 +74,23 @@ if [ $DOLPHIN = 1 ]; then
 	mkdir -p "$CARD"
 fi
 if [ -n "$IMAGE" ]; then
-	command -v mcopy >/dev/null || { echo "mtools (mcopy/mformat) is required for --image (MSYS2: pacman -S mtools)"; exit 1; }
+	# MSYS2 ships mtools only as a MinGW package (/mingw64/bin), which the
+	# plain MSYS and devkitPro shells do not have on PATH.
+	if ! command -v mcopy >/dev/null && [ -x /mingw64/bin/mcopy.exe ]; then
+		PATH=/mingw64/bin:$PATH
+	fi
+	command -v mcopy >/dev/null || {
+		echo "mtools (mcopy/mformat) is required for --image."
+		echo "  MSYS2:  pacman -S mingw-w64-x86_64-mtools"
+		echo "  Debian: apt install mtools      macOS: brew install mtools"
+		echo "Or skip mtools entirely: --dolphin stages into Dolphin's sync folder."
+		exit 1
+	}
 	mkdir -p "$CARD"
 fi
+
+# Native (MinGW) mtools wants Windows paths; cygpath -m gives C:/... form.
+hostpath() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 if [ $DEBUG = 1 ]; then
@@ -149,7 +164,7 @@ if [ -n "$IMAGE" ]; then
 	if [ ! -f "$IMAGE" ]; then
 		echo "creating $IMAGESIZE FAT32 image $IMAGE"
 		truncate -s "$IMAGESIZE" "$IMAGE"
-		mformat -i "$IMAGE" -F ::
+		mformat -i "$(hostpath "$IMAGE")" -F ::
 	else
 		# Dolphin creates WiiSD.raw at 128 MB by default; the Q3 paks alone
 		# are about 470 MB. Refuse rather than let mcopy fail half way.
@@ -164,8 +179,8 @@ if [ -n "$IMAGE" ]; then
 	fi
 	echo "writing card contents into $IMAGE"
 	# mtools: -s recurses, -o overwrites, -m preserves times; ::/ is the image root
-	mcopy -i "$IMAGE" -s -o -m "$CARD"/apps "$CARD"/"$GAMEDIR" ::/
-	mdir -i "$IMAGE" ::/
+	mcopy -i "$(hostpath "$IMAGE")" -s -o -m "$(hostpath "$CARD/apps")" "$(hostpath "$CARD/$GAMEDIR")" ::/
+	mdir -i "$(hostpath "$IMAGE")" ::/
 	echo
 	echo "Dolphin: Config > Wii > SD Card, tick 'Insert SD Card', and point 'SD Card Path' at $IMAGE"
 	echo "(or copy it over Load/WiiSD.raw). Boot engine/build-wii/boot.dol with File > Open."

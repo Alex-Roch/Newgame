@@ -95,7 +95,10 @@ inside `zz-newgame-vm.pk3`) once they stop changing every hour.
 Dolphin boots the DOL directly (File > Open) and homebrew sees only the
 emulated SD card (libfat via SDIO), never a USB drive, so the data has to
 be inside Dolphin's SD image. Two ways to get it there with the same
-script, both from the MSYS2 shell (`pacman -S mtools` once for the first):
+script, both from the MSYS2 shell. The sync folder needs no extra tools
+and is the recommended loop; the raw image needs mtools, which MSYS2 only
+ships as a MinGW package (`pacman -S mingw-w64-x86_64-mtools`; the script
+finds it in `/mingw64/bin` from any MSYS2 shell):
 
 1. **Write the raw image directly.** `--image FILE` stages into `<card
    root>` as usual and then copies `apps/` and `newgame/` into the FAT32
