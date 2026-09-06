@@ -1,0 +1,36 @@
+logged total 97.3 MB in 3877 allocs
+    32.00 MB  hunkLength                         vm.c:547
+    31.97 MB  maxElements * elementLength        common.c:2111
+    15.79 MB  size                               tr_model.c:495
+    10.10 MB  sizeof( *backEndData               tr_init.c:1338
+     3.93 MB  vm->instructionCount * sizeof(*vm- vm.c:760
+     1.53 MB  sum + numShaderFiles*2             tr_shader.c:4535
+     0.75 MB  SURF_HUNK_MAXSIZE                  tr_bsp.c:378
+     0.24 MB  (numNodes + numLeafs               tr_bsp.c:1664
+     0.21 MB  sizeof( shader_t                   tr_shader.c:3398
+     0.15 MB  edgesAlloc                         cm_load.c:675
+     0.11 MB  ( BOX_SIDES + count                cm_load.c:384
+     0.11 MB  sizeof( stages[i]                  tr_shader.c:3416
+     0.07 MB  size * sizeof(char *               tr_shader.c:4575
+     0.04 MB  sizeof( image_t                    tr_image.c:955
+     0.04 MB  count*2*sizeof(*out                tr_bsp.c:1782
+     0.04 MB  ( BOX_BRUSHES + count              cm_load.c:218
+     0.03 MB  count * sizeof(*out                tr_bsp.c:1496
+     0.03 MB  count*sizeof(*out                  tr_bsp.c:1755
+     0.03 MB  size                               tr_shader.c:3421
+     0.03 MB  ( BOX_LEAFS + count                cm_load.c:256
+     0.02 MB  size                               tr_shader.c:3429
+     0.02 MB  bsp->numGridPoints * 8             tr_bsp.c:1988
+     0.02 MB  ( BOX_PLANES + count               cm_load.c:297
+     0.02 MB  count * sizeof( *cm.nodes          cm_load.c:169
+     0.02 MB  count * sizeof( *cm.leafsurfaces   cm_load.c:358
+     0.01 MB  sizeof( *tr.models[tr.numModels]   tr_model.c:330
+by file:
+    35.94 MB  vm.c
+    31.97 MB  common.c
+    15.81 MB  tr_model.c
+    10.10 MB  tr_init.c
+     1.96 MB  tr_shader.c
+     1.12 MB  tr_bsp.c
+     0.40 MB  cm_load.c
+     0.04 MB  tr_image.c
