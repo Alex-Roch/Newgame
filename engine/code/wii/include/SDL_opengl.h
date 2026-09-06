@@ -9,10 +9,7 @@
 #ifndef WII_SDL_OPENGL_SHIM_H
 #define WII_SDL_OPENGL_SHIM_H
 
-#define GL_GLEXT_PROTOTYPES 0
-#define GLAPI
-#define GLAPIENTRY
-#define GLAPIENTRYP *
+/* Mesa's gl.h defines GLAPI/GLAPIENTRY itself; glext.h wants KHR/khrplatform.h (vendored here). */
 #include <GL/gl.h>
 #include <GL/glext.h>
 
