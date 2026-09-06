@@ -156,6 +156,7 @@ static inline int mprotect(void *addr, size_t len, int prot) { (void)addr; (void
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <unistd.h>   /* fsync */
 
 /* ---- Diagnostics. On a console with no stdout the SD card is the
  * debugger. WII_DEBUG builds keep <dev>:/newgame/diag.txt open; release

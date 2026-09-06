@@ -3,6 +3,7 @@
 #   make -f Makefile.wii            release DOL:  build-wii/boot.dol
 #   make -f Makefile.wii debug      debug DOL with boot.txt/diag.txt logging
 #   make -f Makefile.wii check      compile-only check with a host PowerPC cross
+#   make -f Makefile.wii check-debug  the same with WII_DEBUG (what 'debug' compiles)
 #                                   compiler (no devkitPPC needed, no link)
 #   make -f Makefile.wii clean
 #
@@ -24,7 +25,7 @@ WII_GAMEDIR    ?= newgame
 WII_BASEGAME   ?= baseq3
 
 CHECK ?= 0
-ifeq ($(MAKECMDGOALS),check)
+ifneq ($(filter check check-debug,$(MAKECMDGOALS)),)
   CHECK := 1
 endif
 
@@ -50,7 +51,7 @@ else
   BUILD    := build-wii
 endif
 
-ifeq ($(MAKECMDGOALS),debug)
+ifneq ($(filter debug check-debug,$(MAKECMDGOALS)),)
   BUILD      := $(BUILD)-debug
   DEBUG_FLAG := -DWII_DEBUG
 else
@@ -169,7 +170,7 @@ DEPS := $(OBJS:.o=.d)
 #---------------------------------------------------------------------------
 # Rules
 #---------------------------------------------------------------------------
-.PHONY: all dol debug check clean
+.PHONY: all dol debug check check-debug clean
 
 all: dol
 
@@ -178,6 +179,9 @@ debug: $(BUILD)/$(TARGET).dol
 
 check: $(OBJS)
 	@echo "check: all $(words $(OBJS)) objects compiled for PowerPC (no link)"
+
+check-debug: $(OBJS)
+	@echo "check-debug: all objects compiled with WII_DEBUG"
 
 $(BUILD)/$(TARGET).dol: $(BUILD)/$(TARGET).elf
 	elf2dol $< $@

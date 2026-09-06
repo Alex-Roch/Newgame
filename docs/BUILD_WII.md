@@ -49,6 +49,7 @@ git clone --depth 1 https://github.com/devkitPro/libfat ../libfat
 printf '#define _LIBFAT_MAJOR_ 1\n#define _LIBFAT_MINOR_ 1\n#define _LIBFAT_PATCH_ 5\n#define _LIBFAT_STRING "libFAT"\n' > ../libfat/include/libfatversion.h
 sed 's/@LIBOGC_MAJOR@/2/;s/@LIBOGC_MINOR@/9/;s/@LIBOGC_PATCH@/0/;s/@LIBOGC_VER@/2.9.0/' ../libogc/libversion.h.in > ../libogc/gc/ogc/libversion.h
 make -f Makefile.wii check LIBOGC_SRC=../libogc LIBFAT_SRC=../libfat
+make -f Makefile.wii check-debug LIBOGC_SRC=../libogc LIBFAT_SRC=../libfat   # WII_DEBUG paths
 tools/wii/check_qgl.sh          # every GL entry point the frontend calls is wired
 ```
 
