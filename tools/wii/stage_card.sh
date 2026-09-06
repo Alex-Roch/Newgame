@@ -15,6 +15,14 @@
 #                          (cloned into ../spearmint-patch-data if absent)
 #   --gamedir NAME         data directory on the card (default: newgame; must
 #                          match WII_GAMEDIR used for the DOL)
+#   --image FILE           write into a raw FAT32 SD image (Dolphin's WiiSD.raw)
+#                          with mtools instead of a directory; <card root> is
+#                          then a staging directory that is created if needed.
+#                          A missing image is created with --image-size.
+#   --image-size SIZE      size for a newly created image (default 2G)
+#   --dolphin              stage into Dolphin's SD sync folder
+#                          (Load/WiiSDSync under the Dolphin user directory);
+#                          <card root> is ignored
 #
 # Result (for --game baseq3):
 #   <card>/apps/newgame/boot.dol, meta.xml
@@ -36,15 +44,38 @@ GAME=baseq3
 DEBUG=0
 PATCHDATA=""
 GAMEDIR=newgame
+IMAGE=""
+IMAGESIZE=2G
+DOLPHIN=0
 while [ $# -gt 0 ]; do
 	case $1 in
 		--game) GAME=$2; shift 2;;
 		--debug) DEBUG=1; shift;;
 		--patch-data) PATCHDATA=$2; shift 2;;
 		--gamedir) GAMEDIR=$2; shift 2;;
+		--image) IMAGE=$2; shift 2;;
+		--image-size) IMAGESIZE=$2; shift 2;;
+		--dolphin) DOLPHIN=1; shift;;
 		*) echo "unknown option $1"; usage;;
 	esac
 done
+
+# Dolphin: "Config > Wii > SD Card > Automatically Sync with Folder" mirrors
+# this directory into WiiSD.raw on every boot (and back on shutdown).
+if [ $DOLPHIN = 1 ]; then
+	if [ -n "${APPDATA:-}" ]; then
+		CARD=$(cygpath -u "$APPDATA" 2>/dev/null || echo "$APPDATA")/"Dolphin Emulator/Load/WiiSDSync"
+	elif [ -d "$HOME/Library/Application Support/Dolphin" ]; then
+		CARD="$HOME/Library/Application Support/Dolphin/Load/WiiSDSync"
+	else
+		CARD="$HOME/.local/share/dolphin-emu/Load/WiiSDSync"
+	fi
+	mkdir -p "$CARD"
+fi
+if [ -n "$IMAGE" ]; then
+	command -v mcopy >/dev/null || { echo "mtools (mcopy/mformat) is required for --image (MSYS2: pacman -S mtools)"; exit 1; }
+	mkdir -p "$CARD"
+fi
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 if [ $DEBUG = 1 ]; then
@@ -113,6 +144,33 @@ cp "$PATCHDATA"/fonts/*.ttf "$DATA/fonts/"
 echo
 echo "done. Card layout:"
 ( cd "$CARD" && find "apps/newgame" "$GAMEDIR" -maxdepth 2 | sort | sed 's/^/  /' )
+
+if [ -n "$IMAGE" ]; then
+	if [ ! -f "$IMAGE" ]; then
+		echo "creating $IMAGESIZE FAT32 image $IMAGE"
+		truncate -s "$IMAGESIZE" "$IMAGE"
+		mformat -i "$IMAGE" -F ::
+	else
+		# Dolphin creates WiiSD.raw at 128 MB by default; the Q3 paks alone
+		# are about 470 MB. Refuse rather than let mcopy fail half way.
+		need=$(du -sb "$CARD/apps" "$CARD/$GAMEDIR" | awk '{s+=$1} END {print s}')
+		have=$(stat -c %s "$IMAGE")
+		if [ "$have" -lt $((need + 16 * 1024 * 1024)) ]; then
+			echo "$IMAGE is $((have / 1048576)) MB but the card contents need about $((need / 1048576)) MB."
+			echo "Delete the image (this script recreates it at --image-size) or pass a new path,"
+			echo "and set Dolphin's Config > Wii > 'SD Card File Size' to match or to Auto."
+			exit 1
+		fi
+	fi
+	echo "writing card contents into $IMAGE"
+	# mtools: -s recurses, -o overwrites, -m preserves times; ::/ is the image root
+	mcopy -i "$IMAGE" -s -o -m "$CARD"/apps "$CARD"/"$GAMEDIR" ::/
+	mdir -i "$IMAGE" ::/
+	echo
+	echo "Dolphin: Config > Wii > SD Card, tick 'Insert SD Card', and point 'SD Card Path' at $IMAGE"
+	echo "(or copy it over Load/WiiSD.raw). Boot engine/build-wii/boot.dol with File > Open."
+fi
+
 echo
 echo "On the Wii: Homebrew Channel -> newgame. Pad 1 plays; press START on pads 2-4 to drop in."
 echo "Debug logs (debug DOL only): $GAMEDIR/boot.txt, diag.txt, crash.txt on the card."

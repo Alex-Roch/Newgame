@@ -56,7 +56,8 @@ tools/wii/check_qgl.sh          # every GL entry point the frontend calls is wir
 
 `tools/wii/stage_card.sh <card root> <dir with pak*.pk3> [--game baseoa] [--debug]`
 builds the whole layout below in one step (it clones spearmint-patch-data
-if needed). The manual layout:
+if needed); `--image` and `--dolphin` target Dolphin's SD card instead,
+see section 6. The manual layout:
 
 ```
 <dev>:/apps/newgame/boot.dol           (<dev> is sd: or usb:; SD is probed first)
@@ -90,10 +91,49 @@ inside `zz-newgame-vm.pk3`) once they stop changing every hour.
 
 ## 6. Dolphin
 
-Dolphin boots the DOL directly (File > Open). Use a virtual SD image with
-the layout above, enable "Insert SD Card", and map four GameCube
-controllers. Dolphin does not reproduce memory exhaustion, cache
-coherency or IOS timing, so treat it as a fast-iteration tool only.
+Dolphin boots the DOL directly (File > Open) and homebrew sees only the
+emulated SD card (libfat via SDIO), never a USB drive, so the data has to
+be inside Dolphin's SD image. Two ways to get it there with the same
+script, both from the MSYS2 shell (`pacman -S mtools` once for the first):
+
+1. **Write the raw image directly.** `--image FILE` stages into `<card
+   root>` as usual and then copies `apps/` and `newgame/` into the FAT32
+   image with mtools; a missing image is created at `--image-size`
+   (default 2G). Use the `/c/...` path form:
+
+   ```
+   tools/wii/stage_card.sh /tmp/card /c/Games/Quake3/baseq3 --debug \
+       --image "/c/Users/Alex/AppData/Roaming/Dolphin Emulator/Load/WiiSD.raw"
+   ```
+
+   Dolphin's own `WiiSD.raw` is 128 MB by default and the Quake III paks
+   need about 470 MB; the script refuses an image that is too small.
+   Delete it first (the script recreates it) and set Config > Wii > "SD
+   Card File Size" to the same size, or write to a new file and point "SD
+   Card Path" at it. Tick "Insert SD Card".
+
+2. **Sync folder.** `--dolphin` stages into
+   `<Dolphin user dir>/Load/WiiSDSync` (`<card root>` is ignored); with
+   Config > Wii > "Automatically Sync with Folder" enabled and "SD Card
+   File Size" set to Auto, Dolphin rebuilds `WiiSD.raw` from that folder
+   at every boot and writes changes back on shutdown:
+
+   ```
+   tools/wii/stage_card.sh . /c/Games/Quake3/baseq3 --debug --dolphin
+   ```
+
+   This is the easier loop for iterating: rerun the script after each
+   DOL build and just restart the game in Dolphin.
+
+Then map four GameCube controllers (Controllers > GameCube Controllers,
+"Standard Controller" on ports 1-4) and open `engine/build-wii-debug/boot.dol`.
+The debug logs (`newgame/boot.txt`, `diag.txt`, `crash.txt`) land in the
+image; read them with `mcopy -i WiiSD.raw ::/newgame/diag.txt -` or,
+with the sync folder, straight from `Load/WiiSDSync/newgame/` after
+Dolphin shuts down and syncs back.
+
+Dolphin does not reproduce memory exhaustion, cache coherency or IOS
+timing, so treat it as a fast-iteration tool only.
 
 ## 7. Debugging on hardware
 
