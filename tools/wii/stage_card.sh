@@ -106,7 +106,12 @@ fail=0
 [ -n "$QVMDIR" ] && [ -f "$QVMDIR/mint-cgame.qvm" ] && [ -f "$QVMDIR/mint-game.qvm" ] \
 	|| { echo "missing QVMs (run: make -C game BUILD_GAME_SO=0 BUILD_GAME_QVM=1 BUILD_MISSIONPACK=0)"; fail=1; }
 [ -d "$PAKDIR" ] && ls "$PAKDIR"/pak0.pk3 >/dev/null 2>&1 \
-	|| { echo "no pak0.pk3 in $PAKDIR"; fail=1; }
+	|| { echo "no pak0.pk3 in $PAKDIR"
+	     echo "  point <pak dir> at your Quake III Arena baseq3 directory, e.g."
+	     echo "    /c/Program Files (x86)/Steam/steamapps/common/Quake 3 Arena/baseq3"
+	     echo "    /c/GOG Games/Quake III Arena/baseq3"
+	     echo "    /c/Program Files (x86)/Quake III Arena/baseq3   (CD install)"
+	     echo "  or your OpenArena baseoa directory with --game baseoa"; fail=1; }
 [ -d "$CARD" ] || { echo "card root $CARD does not exist"; fail=1; }
 [ $fail = 0 ] || exit 1
 
