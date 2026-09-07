@@ -67,20 +67,42 @@ static clock_t time_total_vm = 0;
 //#define VM_SYSTEM_MALLOC
 #if defined(GEKKO)
 /*
- * Wii: the compiler allocates hundreds of thousands of small nodes for a
- * mint-arena sized QVM, which fragments and exhausts the small malloc
- * arena. Use a chunked bump arena instead: zero per-node overhead, freed
- * wholesale by PPC_ArenaReset at the end of VM_Compile. (Same approach as
- * Mayo1970/ioQuake3-wii, used with permission.)
+ * Wii: the compiler allocates hundreds of thousands of small nodes
+ * (measured: 12.3 MB for mint-cgame, 14.4 MB for mint-game), which
+ * fragments and exhausts the small libogc malloc arena. Use a chunked
+ * bump arena instead: zero per-node overhead, freed wholesale by
+ * PPC_ArenaReset at the end of VM_Compile (same approach as
+ * Mayo1970/ioQuake3-wii, used with permission).
+ *
+ * Chunks come from hunk temp memory while the hunk has room; it is nearly
+ * empty whenever a QVM is first compiled (at boot for cgame, right after
+ * Hunk_Clear for game) and the compiled-code cache below means later map
+ * loads do not compile at all. malloc is only the fallback.
  */
 #include <stdlib.h>
 #define PPC_ARENA_CHUNK ( 512 * 1024 )
+#define PPC_ARENA_HUNK_MARGIN ( 1024 * 1024 )	/* leave this much hunk for the loader */
 typedef struct ppc_arena_chunk_s {
 	struct ppc_arena_chunk_s *next;
 	size_t used;
 	size_t cap;
+	int fromHunk;
 } ppc_arena_chunk_t;
 static ppc_arena_chunk_t *ppc_arena = NULL;
+static size_t ppc_arena_hunkBytes = 0, ppc_arena_heapBytes = 0;	/* per-compile statistics */
+static void
+PPC_ArenaReset( void )
+{
+	/* newest first: hunk temp memory must be released in stack order */
+	while ( ppc_arena ) {
+		ppc_arena_chunk_t *next = ppc_arena->next;
+		if ( ppc_arena->fromHunk )
+			Hunk_FreeTempMemory( ppc_arena );
+		else
+			free( ppc_arena );
+		ppc_arena = next;
+	}
+}
 static void *
 PPC_Malloc( size_t size )
 {
@@ -88,12 +110,29 @@ PPC_Malloc( size_t size )
 	size = ( size + 7 ) & ~(size_t)7;
 	if ( !ppc_arena || ppc_arena->used + size > ppc_arena->cap ) {
 		size_t cap = ( size > PPC_ARENA_CHUNK ) ? size : PPC_ARENA_CHUNK;
-		ppc_arena_chunk_t *c = malloc( sizeof( *c ) + cap );
-		if ( !c )
+		size_t total = sizeof( ppc_arena_chunk_t ) + cap;
+		ppc_arena_chunk_t *c = NULL;
+		int fromHunk = 0;
+		if ( Hunk_MemoryRemaining() > (int)( total + PPC_ARENA_HUNK_MARGIN ) ) {
+			c = Hunk_AllocateTempMemory( (int)total );
+			fromHunk = 1;
+		}
+		if ( !c ) {
+			c = malloc( total );
+			fromHunk = 0;
+		}
+		if ( !c ) {
+			PPC_ArenaReset();
 			DIE( "Not enough memory" );
+		}
 		c->next = ppc_arena;
 		c->used = 0;
 		c->cap = cap;
+		c->fromHunk = fromHunk;
+		if ( fromHunk )
+			ppc_arena_hunkBytes += total;
+		else
+			ppc_arena_heapBytes += total;
 		ppc_arena = c;
 	}
 	p = (unsigned char *)( ppc_arena + 1 ) + ppc_arena->used;
@@ -101,15 +140,6 @@ PPC_Malloc( size_t size )
 	return p;
 }
 #define PPC_Free( p ) ( (void)( p ) )
-static void
-PPC_ArenaReset( void )
-{
-	while ( ppc_arena ) {
-		ppc_arena_chunk_t *next = ppc_arena->next;
-		free( ppc_arena );
-		ppc_arena = next;
-	}
-}
 #elif defined(VM_SYSTEM_MALLOC)
 static inline void *
 PPC_Malloc( size_t size )
@@ -2033,10 +2063,156 @@ VM_Destroy_Compiled( vm_t *self )
 	self->codeBase = NULL;
 }
 
+#ifdef GEKKO
+/*
+ * Compiled-code cache (Wii only).
+ *
+ * Spearmint frees and recreates both VMs on every map change (VM_Free then
+ * VM_Create), and the hunk is cleared in between. Keeping the generated
+ * code (about 2.8 MB for both mint-arena QVMs) and the instruction pointer
+ * table alive across VM_Free means each QVM is compiled once per boot,
+ * when the hunk is nearly empty, and later loads skip the compiler and its
+ * 12-14 MB of temporary memory entirely. Entries are keyed by VM name and
+ * a checksum of the QVM image, so a changed .qvm is recompiled.
+ *
+ * The generated code holds no address that changes between loads: the
+ * data base and program stack are passed in registers on every call, the
+ * data mask depends only on the QVM size, and the vm_data_t block at the
+ * start of the code buffer points at the (heap allocated, kept) pointer
+ * table and at engine functions.
+ */
+typedef struct {
+	char		name[MAX_QPATH];
+	unsigned	checksum;
+	int			instructionCount;
+	int			dataMask;
+	byte		*codeBase;
+	int			codeLength;
+	intptr_t	*instructionPointers;
+} vmCodeCache_t;
+#define VM_CODECACHE_SLOTS 4	/* MAX_VM is private to vm.c */
+static vmCodeCache_t vm_codeCache[VM_CODECACHE_SLOTS];
+
+static unsigned VM_QVMChecksum( const vmHeader_t *header )
+{
+	/* code, data, lit and jump-table targets are contiguous after the header */
+	int length = header->dataOffset + header->dataLength + header->litLength + header->jtrgLength;
+	return Com_BlockChecksum( header, length );
+}
+
+static void VM_CodeCacheDrop( vmCodeCache_t *c )
+{
+	if ( c->codeBase )
+		munmap( c->codeBase, c->codeLength );
+	if ( c->instructionPointers )
+		free( c->instructionPointers );
+	Com_Memset( c, 0, sizeof( *c ) );
+}
+
+/* Heap allocated so it survives Hunk_Clear together with the code. */
+intptr_t *VM_CompiledAllocPointers( vm_t *vm )
+{
+	intptr_t *p = calloc( vm->instructionCount, sizeof( intptr_t ) );
+	if ( !p )
+		Com_Error( ERR_DROP, "VM_CompiledAllocPointers: %i bytes failed", (int)( vm->instructionCount * sizeof( intptr_t ) ) );
+	vm->wiiHeapPointers = qtrue;
+	return p;
+}
+
+/* Called on VM_Free when the code was not handed to the cache. */
+void VM_CompiledFreePointers( vm_t *vm )
+{
+	if ( vm->wiiHeapPointers && vm->instructionPointers )
+		free( vm->instructionPointers );
+	vm->instructionPointers = NULL;
+	vm->wiiHeapPointers = qfalse;
+}
+
+/*
+ * Try to attach previously compiled code. Always records the image
+ * checksum in the vm so VM_CompiledCacheStore can key the entry later.
+ */
+qboolean VM_CompiledCacheAttach( vm_t *vm, vmHeader_t *header )
+{
+	int i;
+
+	vm->wiiChecksum = VM_QVMChecksum( header );
+
+	for ( i = 0; i < VM_CODECACHE_SLOTS; i++ ) {
+		vmCodeCache_t *c = &vm_codeCache[i];
+		if ( !c->codeBase || Q_stricmp( c->name, vm->name ) )
+			continue;
+		if ( c->checksum != vm->wiiChecksum || c->instructionCount != header->instructionCount || c->dataMask != vm->dataMask ) {
+			Com_Printf( "VM %s: cached code is for a different image, recompiling\n", vm->name );
+			VM_CodeCacheDrop( c );
+			return qfalse;
+		}
+		vm->codeBase = c->codeBase;
+		vm->codeLength = c->codeLength;
+		vm->instructionPointers = c->instructionPointers;
+		vm->wiiHeapPointers = qtrue;
+		vm->compiled = qtrue;
+		vm->destroy = VM_Destroy_Compiled;
+		Com_Memset( c, 0, sizeof( *c ) );	/* the vm owns it again */
+		Com_Printf( "VM %s: reusing %i bytes of compiled code\n", vm->name, vm->codeLength );
+		return qtrue;
+	}
+	return qfalse;
+}
+
+/*
+ * Take ownership of a compiled vm's code and pointer table instead of
+ * destroying them. Returns qfalse if there is nothing to keep, in which
+ * case the caller destroys the vm as usual.
+ */
+qboolean VM_CompiledCacheStore( vm_t *vm )
+{
+	vmCodeCache_t *c = NULL;
+	int i;
+
+	if ( !vm->compiled || !vm->codeBase || !vm->instructionPointers || !vm->wiiHeapPointers )
+		return qfalse;
+
+	for ( i = 0; i < VM_CODECACHE_SLOTS; i++ ) {
+		if ( vm_codeCache[i].codeBase && !Q_stricmp( vm_codeCache[i].name, vm->name ) ) {
+			VM_CodeCacheDrop( &vm_codeCache[i] );	/* stale entry for the same VM */
+			c = &vm_codeCache[i];
+			break;
+		}
+	}
+	if ( !c ) {
+		for ( i = 0; i < VM_CODECACHE_SLOTS; i++ ) {
+			if ( !vm_codeCache[i].codeBase ) {
+				c = &vm_codeCache[i];
+				break;
+			}
+		}
+	}
+	if ( !c )
+		return qfalse;
+
+	Q_strncpyz( c->name, vm->name, sizeof( c->name ) );
+	c->checksum = vm->wiiChecksum;
+	c->instructionCount = vm->instructionCount;
+	c->dataMask = vm->dataMask;
+	c->codeBase = vm->codeBase;
+	c->codeLength = vm->codeLength;
+	c->instructionPointers = vm->instructionPointers;
+
+	vm->codeBase = NULL;
+	vm->instructionPointers = NULL;
+	vm->wiiHeapPointers = qfalse;
+	return qtrue;
+}
+#endif /* GEKKO */
+
 void
 VM_Compile( vm_t *vm, vmHeader_t *header )
 {
 	PPC_ArenaReset();	/* drop anything left by an aborted compile */
+#ifdef GEKKO
+	ppc_arena_hunkBytes = ppc_arena_heapBytes = 0;
+#endif
 	long int pc = 0;
 	unsigned long int i_count;
 	char* code;
@@ -2136,6 +2312,11 @@ VM_Compile( vm_t *vm, vmHeader_t *header )
 		DIE( "mprotect failed" );
 	}
 
+#ifdef GEKKO
+	Com_Printf( "VM %s: compiler used %u KB of hunk temp memory and %u KB of heap; %u KB hunk free\n",
+		vm->name, (unsigned)( ppc_arena_hunkBytes >> 10 ), (unsigned)( ppc_arena_heapBytes >> 10 ),
+		(unsigned)( Hunk_MemoryRemaining() >> 10 ) );
+#endif
 	PPC_ArenaReset();
 
 	vm->destroy = VM_Destroy_Compiled;

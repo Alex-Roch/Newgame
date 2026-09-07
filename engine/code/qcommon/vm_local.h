@@ -179,6 +179,10 @@ struct vm_s {
 
 	byte		*dataBase;
 	int			dataMask;
+#ifdef GEKKO
+	unsigned	wiiChecksum;		// QVM image checksum, keys the compiled-code cache
+	qboolean	wiiHeapPointers;	// instructionPointers is heap allocated (compiled VMs)
+#endif
 	int			dataAlloc;			// actually allocated
 
 	int			zoneTag;			// tag for the memory zone owned by the VM (i.e., TAG_GAME or TAG_CGAME)
@@ -204,6 +208,12 @@ extern	vm_t	*currentVM;
 extern	int		vm_debugLevel;
 
 void VM_Compile( vm_t *vm, vmHeader_t *header );
+#ifdef GEKKO
+intptr_t *VM_CompiledAllocPointers( vm_t *vm );
+void VM_CompiledFreePointers( vm_t *vm );
+qboolean VM_CompiledCacheAttach( vm_t *vm, vmHeader_t *header );
+qboolean VM_CompiledCacheStore( vm_t *vm );
+#endif
 int	VM_CallCompiled( vm_t *vm, int *args );
 
 void VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header );

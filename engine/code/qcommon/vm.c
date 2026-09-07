@@ -757,29 +757,43 @@ vm_t *VM_Create( const char *module, intptr_t (*systemCalls)(intptr_t *),
 
 	// allocate space for the jump targets, which will be filled in by the compile/prep functions
 	vm->instructionCount = header->instructionCount;
-	vm->instructionPointers = Hunk_Alloc(vm->instructionCount * sizeof(*vm->instructionPointers), h_high);
 
-	// copy or compile the instructions
-	vm->codeLength = header->codeLength;
+#ifdef GEKKO
+	// Wii: reuse the code compiled by an earlier load of the same image
+	if ( interpret != VMI_BYTECODE && VM_CompiledCacheAttach( vm, header ) ) {
+		// codeBase, codeLength, instructionPointers and destroy are restored
+	} else
+#endif
+	{
+#ifdef GEKKO
+		if ( interpret != VMI_BYTECODE )
+			vm->instructionPointers = VM_CompiledAllocPointers( vm );	// must outlive the hunk for the cache
+		else
+#endif
+		vm->instructionPointers = Hunk_Alloc(vm->instructionCount * sizeof(*vm->instructionPointers), h_high);
 
-	vm->compiled = qfalse;
+		// copy or compile the instructions
+		vm->codeLength = header->codeLength;
+
+		vm->compiled = qfalse;
 
 #ifdef NO_VM_COMPILED
-	if(interpret >= VMI_COMPILED) {
-		Com_Printf("Architecture doesn't have a bytecode compiler, using interpreter\n");
-		interpret = VMI_BYTECODE;
-	}
+		if(interpret >= VMI_COMPILED) {
+			Com_Printf("Architecture doesn't have a bytecode compiler, using interpreter\n");
+			interpret = VMI_BYTECODE;
+		}
 #else
-	if(interpret != VMI_BYTECODE)
-	{
-		vm->compiled = qtrue;
-		VM_Compile( vm, header );
-	}
+		if(interpret != VMI_BYTECODE)
+		{
+			vm->compiled = qtrue;
+			VM_Compile( vm, header );
+		}
 #endif
-	// VM_Compile may have reset vm->compiled if compilation failed
-	if (!vm->compiled)
-	{
-		VM_PrepareInterpreter( vm, header );
+		// VM_Compile may have reset vm->compiled if compilation failed
+		if (!vm->compiled)
+		{
+			VM_PrepareInterpreter( vm, header );
+		}
 	}
 
 	// free the original file
@@ -821,8 +835,17 @@ void VM_Free( vm_t *vm ) {
 		}
 	}
 
+#ifdef GEKKO
+	// Wii: keep compiled code for the next load of the same image
+	if ( VM_CompiledCacheStore( vm ) ) {
+		// code and pointer table now belong to the cache
+	} else
+#endif
 	if(vm->destroy)
 		vm->destroy(vm);
+#ifdef GEKKO
+	VM_CompiledFreePointers( vm );
+#endif
 
 	if ( vm->dllHandle ) {
 		Sys_UnloadDll( vm->dllHandle );

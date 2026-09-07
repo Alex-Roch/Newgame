@@ -157,7 +157,39 @@ In-game: `meminfo` (hunk high-water marks), `hunklog` (debug build),
 `com_speeds 1` (frame breakdown to `diag.txt`), `r_showImages 1`,
 `r_speeds 1`.
 
-## 8. What to expect at first boot, in order
+## 8. Memory layout and the QVM compiler
+
+Wii memory as this build uses it (Dolphin and a retail Wii are the same
+to within a megabyte):
+
+| Region | Size | Holds |
+|---|---|---|
+| MEM1 (24 MB) | 12 MB | DOL text, data and bss (10 MB of static arrays: `cl_cin` 3 MB, `cl_main` 1.8 MB, `snd_dma` 1.1 MB, the 512 KB stack) |
+| MEM1 | 1.5 MB | two XFBs, GX FIFO, libogc |
+| MEM1 | rest (about 10 MB) | libogc malloc arena, part 1 |
+| MEM2 bump (top 40 MB) | 30 MB | hunk (`com_hunkMegs`): BSP, textures, models, sounds, both VM data segments (8 MB each) |
+| MEM2 bump | 6 MB | zone (`com_zoneMegs`): botlib AAS and routing cache, pk3 directories, cvars |
+| MEM2 bump | 4 MB | JIT code buffers (1.3 MB cgame + 1.5 MB game) |
+| MEM2 | about 12 MB | libogc malloc arena, part 2 (FreeType, libfat, the instruction pointer tables, pk3 zip state) |
+
+The boot console and `diag.txt` print the actual arena sizes.
+
+The PowerPC JIT needs 12.3 MB (mint-cgame) and 14.4 MB (mint-game) of
+temporary memory per compile, measured by running the compiler under
+qemu-ppc. That does not fit in the malloc arena next to a loaded map, so:
+
+* the compiler's node arena is carved out of hunk temp memory while the
+  hunk has room (it falls back to malloc chunk by chunk), and
+* compiled code and its pointer table are kept across `VM_Free` in a
+  cache keyed by VM name and a checksum of the QVM image (`vm_powerpc.c`,
+  `VM_CompiledCache*`). Each QVM is compiled once per boot, when the hunk
+  is nearly empty; every later map load reuses the code. A changed
+  `.qvm` on the card is detected and recompiled.
+
+The console line `VM <name>: compiler used N KB of hunk temp memory and
+M KB of heap` shows which path was taken; M should be 0.
+
+## 9. What to expect at first boot, in order
 
 1. Link errors from newlib/libogc API drift (the sandbox could not link).
 2. `boot.txt` stopping before "Com_Init done": filesystem paths or the MEM2
@@ -170,7 +202,7 @@ In-game: `meminfo` (hunk high-water marks), `hunklog` (debug build),
 5. Pad 2-4 not joining: check that `2dropin` from the console works first;
    then that `IN_Frame` sees the channel (`PAD_ScanPads` connected mask).
 
-## 9. Features cut for the first playable, and the recommendation on each
+## 10. Features cut for the first playable, and the recommendation on each
 
 | Cut | Saves | Recommendation |
 |---|---|---|

@@ -148,7 +148,8 @@ int main( int argc, char *argv[] )
 	SYS_SetResetCallback( wii_reset_cb );
 
 	mem2_mb = Wii_MEM2_Init();
-	printf( "[wii] MEM2 bump: %u MB\n", (unsigned)mem2_mb );
+	printf( "[wii] MEM2 bump: %u MB; malloc arena: MEM1 %u KB + MEM2 %u KB\n", (unsigned)mem2_mb,
+		(unsigned)( SYS_GetArena1Size() >> 10 ), (unsigned)( SYS_GetArena2Size() >> 10 ) );
 
 	Wii_InitMallocLock();
 
@@ -170,6 +171,8 @@ int main( int argc, char *argv[] )
 	}
 	Wii_CrashMark( "main() started, storage mounted" );
 	Wii_BootMark( "storage mounted" );
+	wii_diag( "MEM2 bump %u MB; malloc arena MEM1 %u KB + MEM2 %u KB\n", (unsigned)mem2_mb,
+		(unsigned)( SYS_GetArena1Size() >> 10 ), (unsigned)( SYS_GetArena2Size() >> 10 ) );
 #endif
 
 	Wii_Input_Init();
