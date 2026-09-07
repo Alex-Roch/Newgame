@@ -82,6 +82,10 @@ inside `zz-newgame-vm.pk3`) once they stop changing every hour.
 ## 5. Running
 
 * Pad 1 is seat 1 and starts playing when a map loads.
+* Binds are per seat by *command name*: `+attack` acts on seat 1, `+2attack`
+  on seat 2, `2weapnext` on seat 2 and so on (`Com_LocalPlayerCvarName`).
+  `data/wii.cfg` binds `2JOY_*` keys to the `2`-prefixed commands; a bind
+  of `2JOY_A` to plain `+moveup` would make pad 2 drive player 1.
 * Pads 2-4: press START on an unused pad to drop in (`IN_CheckDropIn`).
   Console equivalents: `2dropin`, `3dropin`, `4dropin`, `Ndropout`.
 * Four seats from the start: `set cl_localPlayers 15; map q3dm1` in the
