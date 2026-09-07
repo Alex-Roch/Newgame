@@ -48,8 +48,10 @@ static u8  *s_mem2_base = NULL;
 static u8  *s_mem2_ptr  = NULL;
 static u32  s_mem2_left = 0;
 
-#define WII_MEM2_BUMP_MAX   (40u * 1024u * 1024u)
-#define WII_MEM2_RESERVE    (14u * 1024u * 1024u)  /* zone + sound + malloc headroom left in Arena2 */
+#define WII_MEM2_BUMP_MAX   (48u * 1024u * 1024u)
+/* Left in Arena2 for malloc (GX textures live there; MEM1 adds about 10 MB
+ * more). A 51 MB Arena2 (retail Wii and Dolphin) gives a 41 MB bump. */
+#define WII_MEM2_RESERVE    (10u * 1024u * 1024u)
 
 u32 Wii_MEM2_Init( void )
 {

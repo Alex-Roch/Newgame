@@ -43,8 +43,16 @@ Suite 120, Rockville, Maryland 20850 USA.
 #define MAXSIZE				8
 #define MINSIZE				4
 
+#ifdef GEKKO
+/* The static RoQ line buffer is 8 bytes per pixel and sits in MEM1, next to
+ * the malloc arena; 256x256 keeps it at 512 KB instead of 2 MB. Larger
+ * cinematics are refused (see ROQ_QUAD_INFO), none ship with this game. */
+#define DEFAULT_CIN_WIDTH	256
+#define DEFAULT_CIN_HEIGHT	256
+#else
 #define DEFAULT_CIN_WIDTH	512
 #define DEFAULT_CIN_HEIGHT	512
+#endif
 
 #define ROQ_QUAD			0x1000
 #define ROQ_QUAD_INFO		0x1001
@@ -1171,6 +1179,13 @@ redump:
 		case	ROQ_QUAD_INFO:
 			if (cinTable[currentHandle].numQuads == -1) {
 				readQuadInfo( framedata );
+				if ( cinTable[currentHandle].xsize * cinTable[currentHandle].ysize > DEFAULT_CIN_WIDTH * DEFAULT_CIN_HEIGHT ) {
+					Com_Printf( S_COLOR_YELLOW "Cinematic %s is %ux%u, larger than the %ux%u buffer, skipping\n",
+						cinTable[currentHandle].fileName, cinTable[currentHandle].xsize, cinTable[currentHandle].ysize,
+						DEFAULT_CIN_WIDTH, DEFAULT_CIN_HEIGHT );
+					cinTable[currentHandle].status = FMV_EOF;
+					break;
+				}
 				setupQuad( 0, 0 );
 				cinTable[currentHandle].startTime = cinTable[currentHandle].lastTime = Com_ScaledMilliseconds();
 			}

@@ -183,9 +183,11 @@ int main( int argc, char *argv[] )
 	Wii_BootMark( "audio initialised" );
 
 	/* The MEM2 bump holds the hunk, the zone (every calloc of 4 MB or more
-	 * lands there, see wii_sys.c) and the JIT code buffers (about 4 MB for
-	 * both mint-arena QVMs). Size the hunk from what is left. */
-	hunk_mb = mem2_mb - WII_DEF_COMZONEMEGS - 4;
+	 * lands there, see wii_sys.c) and the JIT code buffers (2.8 MB for both
+	 * mint-arena QVMs; anything more spills into malloc). Size the hunk from
+	 * what is left: 32 MB on a 41 MB bump. The two VM data segments alone
+	 * take 16 MB of it, so the floor is well above WII_MIN_COMHUNKMEGS. */
+	hunk_mb = mem2_mb - WII_DEF_COMZONEMEGS - 3;
 	if ( hunk_mb < WII_MIN_COMHUNKMEGS )
 		hunk_mb = WII_MIN_COMHUNKMEGS;
 

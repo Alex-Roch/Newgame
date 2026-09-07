@@ -131,10 +131,17 @@ finds it in `/mingw64/bin` from any MSYS2 shell):
 
 Then map four GameCube controllers (Controllers > GameCube Controllers,
 "Standard Controller" on ports 1-4) and open `engine/build-wii-debug/boot.dol`.
-The debug logs (`newgame/boot.txt`, `diag.txt`, `crash.txt`) land in the
-image; read them with `mcopy -i WiiSD.raw ::/newgame/diag.txt -` or,
-with the sync folder, straight from `Load/WiiSDSync/newgame/` after
-Dolphin shuts down and syncs back.
+
+Logs: only the **debug** DOL writes `newgame/boot.txt`, `diag.txt` and
+`crash.txt` (stage with `--debug`, and open `build-wii-debug/boot.dol`,
+not `build-wii/boot.dol`). They land in the SD image; read them with
+`mcopy -i WiiSD.raw ::/newgame/diag.txt -` or, with the sync folder,
+from `Load/WiiSDSync/newgame/` after you *stop* the emulation (Dolphin
+writes the image back to the folder on stop, not while running).
+`diag.txt` holds everything the engine printed, including the memory
+lines. There is no in-game console on the Wii build: it has no keyboard,
+so configuration goes through `wii.cfg` and `+set` in `wii_main.c`, and
+diagnostics through the log files.
 
 Dolphin does not reproduce memory exhaustion, cache coherency or IOS
 timing, so treat it as a fast-iteration tool only.
@@ -164,13 +171,20 @@ to within a megabyte):
 
 | Region | Size | Holds |
 |---|---|---|
-| MEM1 (24 MB) | 12 MB | DOL text, data and bss (10 MB of static arrays: `cl_cin` 3 MB, `cl_main` 1.8 MB, `snd_dma` 1.1 MB, the 512 KB stack) |
+| MEM1 (24 MB) | 10.5 MB | DOL text, data and bss (static arrays: `cl_main` 1.8 MB, `cl_cin` 1.5 MB, `snd_dma` 1.1 MB, the 512 KB stack) |
 | MEM1 | 1.5 MB | two XFBs, GX FIFO, libogc |
-| MEM1 | rest (about 10 MB) | libogc malloc arena, part 1 |
-| MEM2 bump (top 40 MB) | 30 MB | hunk (`com_hunkMegs`): BSP, textures, models, sounds, both VM data segments (8 MB each) |
-| MEM2 bump | 6 MB | zone (`com_zoneMegs`): botlib AAS and routing cache, pk3 directories, cvars |
-| MEM2 bump | 4 MB | JIT code buffers (1.3 MB cgame + 1.5 MB game) |
-| MEM2 | about 12 MB | libogc malloc arena, part 2 (FreeType, libfat, the instruction pointer tables, pk3 zip state) |
+| MEM1 | rest (about 12 MB) | libogc malloc arena, part 1 |
+| MEM2 bump (Arena2 minus 10 MB, 41 MB on a 51 MB Arena2) | 32 MB | hunk (`com_hunkMegs`): both VM data segments (8 MB each), BSP, models, shader text, sounds (`com_soundMegs 2`), render lists |
+| MEM2 bump | 6 MB | zone (`com_zoneMegs`): `svs.clients` (about 1.6 MB), parse entities (1 MB), pk3 directories, cvars, strings |
+| MEM2 bump | 3 MB | JIT code buffers (1.3 MB cgame + 1.5 MB game; overflow goes to malloc) |
+| MEM2 | 10 MB | libogc malloc arena, part 2 (GX textures, FreeType, libfat, the instruction pointer tables, zip state) |
+
+Measured on the desktop build of this tree (oa_dm1, 3 bots): the game VM
+uses 1.37 MB of its heap with three bots (about 430 KB per bot, all bot
+AI data lives in the game VM in mint-arena), the cgame heap is unused,
+map content on the hunk is about 6 MB, and botlib adds about 1 MB.
+`vm_gameHeapMegs 5` keeps the game segment at 8 MB; a 4 MB segment
+(`vm_gameHeapMegs 1`) works for at most three bots.
 
 The boot console and `diag.txt` print the actual arena sizes.
 
